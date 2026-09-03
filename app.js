@@ -1,72 +1,327 @@
-const ROOMS = ["Abhishek Pandey's Cabin", "Ajay Panjnani's Cabin", "Ajay Bhamare's Cabin", "Conference Room"];
-const START = 9 * 60 + 30, END = 18 * 60 + 30, STEP = 15;
-const STORAGE_KEY = "absli-workspace-bookings-v1";
-const slots = Array.from({ length: (END - START) / STEP }, (_, i) => START + i * STEP);
+const ROOMS = [
+  "Abhishek Pandey's Cabin",
+  "Ajay Panjnani's Cabin",
+  "Ajay Bhamare's Cabin",
+  "Conference Room"
+];
+
+const SUPABASE_URL = "https://xiupfpnogfrtcxnitdiu.supabase.co/rest/v1/";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_pPK60oxH3lbdqLcohvJHRA_ILAMG1Gw";
+
+const supabaseClient = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_PUBLISHABLE_KEY
+);
+
+const START = 9 * 60 + 30;
+const END = 18 * 60 + 30;
+const STEP = 15;
+const slots = Array.from(
+  { length: (END - START) / STEP },
+  (_, i) => START + i * STEP
+);
+
 let selectedSlots = new Set();
-let cancellingId = null;
 
 const $ = (id) => document.getElementById(id);
 const isoToday = () => new Date().toISOString().slice(0, 10);
-const readBookings = () => JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-const saveBookings = (bookings) => localStorage.setItem(STORAGE_KEY, JSON.stringify(bookings));
-const timeText = (minutes) => { const h = Math.floor(minutes / 60), m = minutes % 60; return `${h > 12 ? h - 12 : h}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`; };
-const timeValue = (minutes) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
-const parseTime = (value) => { const [h, m] = value.split(":").map(Number); return h * 60 + m; };
-const prettyDate = (value) => new Date(`${value}T12:00:00`).toLocaleDateString("en-IN", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 
-function toast(message, error = false) { const el = document.createElement("div"); el.className = `toast${error ? " error" : ""}`; el.textContent = message; $("toastRegion").append(el); setTimeout(() => el.remove(), 3500); }
-function overlaps(aStart, aEnd, bStart, bEnd) { return aStart < bEnd && aEnd > bStart; }
-function roomFree(room, date, start, end, excludeId) { return !readBookings().some(b => b.room === room && b.date === date && b.id !== excludeId && overlaps(start, end, parseTime(b.start), parseTime(b.end))); }
-function populateSelects() {
-  ["room", "roomFilter"].forEach(id => { const select = $(id); ROOMS.forEach(room => { const o = new Option(room, room); select.add(o); }); });
-  slots.concat([END]).forEach(min => { const option = new Option(timeText(min), timeValue(min)); $("startTime").add(option.cloneNode(true)); $("endTime").add(option); });
+const timeText = (minutes) => {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${h > 12 ? h - 12 : h}:${String(m).padStart(2, "0")} ${
+    h >= 12 ? "PM" : "AM"
+  }`;
+};
+
+const timeValue = (minutes) =>
+  `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(
+    minutes % 60
+  ).padStart(2, "0")}`;
+
+const parseTime = (value) => {
+  const [h, m] = value.split(":").map(Number);
+  return h * 60 + m;
+};
+
+const prettyDate = (value) =>
+  new Date(`${value}T12:00:00`).toLocaleDateString("en-IN", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric"
+  });
+
+function toast(message, error = false) {
+  const el = document.createElement("div");
+  el.className = `toast${error ? " error" : ""}`;
+  el.textContent = message;
+  $("toastRegion").append(el);
+  setTimeout(() => el.remove(), 3500);
 }
-function renderTimeline() {
-  const date = $("selectedDate").value, bookings = readBookings().filter(b => b.date === date);
+
+function escapeHtml(value) {
+  const el = document.createElement("div");
+  el.textContent = value;
+  return el.innerHTML;
+}
+
+async function readBookings() {
+  const { data, error } = await supabaseClient
+    .from("bookings")
+    .select("*")
+    .order("booking_date", { ascending: true })
+    .order("start_time", { ascending: true });
+
+  if (error) {
+    toast(`Could not load bookings: ${error.message}`, true);
+    return [];
+  }
+
+  return data.map((booking) => ({
+    id: booking.id,
+    title: booking.title,
+    organizer: booking.organizer,
+    room: booking.room,
+    date: booking.booking_date,
+    start: booking.start_time.slice(0, 5),
+    end: booking.end_time.slice(0, 5)
+  }));
+}
+
+function populateSelects() {
+  ["room", "roomFilter"].forEach((id) => {
+    const select = $(id);
+
+    ROOMS.forEach((room) => {
+      select.add(new Option(room, room));
+    });
+  });
+
+  slots.concat([END]).forEach((minutes) => {
+    const option = new Option(timeText(minutes), timeValue(minutes));
+    $("startTime").add(option.cloneNode(true));
+    $("endTime").add(option);
+  });
+}
+
+async function renderTimeline() {
+  const date = $("selectedDate").value;
+  const bookings = (await readBookings()).filter(
+    (booking) => booking.date === date
+  );
+
   $("dateSummary").textContent = prettyDate(date);
-  const grid = $("timeline"); grid.innerHTML = "";
-  const corner = document.createElement("div"); corner.className = "corner time-label"; grid.append(corner);
-  slots.forEach((min, index) => { const label = document.createElement("div"); label.className = "time-label"; label.textContent = index % 4 === 0 ? timeText(min) : ""; grid.append(label); });
-  ROOMS.forEach(room => {
-    const roomLabel = document.createElement("div"); roomLabel.className = "room-label"; roomLabel.textContent = room; grid.append(roomLabel);
-    const current = bookings.filter(b => b.room === room);
-    slots.forEach((min, index) => {
-      const slot = document.createElement("button"); slot.type = "button"; slot.className = "slot"; slot.dataset.room = room; slot.dataset.time = min;
-      const booking = current.find(b => min >= parseTime(b.start) && min < parseTime(b.end));
-      const selected = selectedSlots.has(`${room}-${min}`);
-      if (booking) { const first = min === parseTime(booking.start), last = min + STEP === parseTime(booking.end); slot.classList.add(first ? "booked-start" : last ? "booked-end" : "booked-middle", "unavailable"); slot.title = `${booking.title} — ${booking.organizer}`; if (first) { const label = document.createElement("span"); label.className = "booking-label"; label.textContent = booking.title; slot.append(label); } }
-      else if (selected) slot.classList.add("selected");
-      else slot.title = `Book ${room} at ${timeText(min)}`;
-      slot.addEventListener("click", () => { if (!booking) openBooking(room, min); }); grid.append(slot);
+
+  const grid = $("timeline");
+  grid.innerHTML = "";
+
+  const corner = document.createElement("div");
+  corner.className = "corner time-label";
+  grid.append(corner);
+
+  slots.forEach((minutes, index) => {
+    const label = document.createElement("div");
+    label.className = "time-label";
+    label.textContent = index % 4 === 0 ? timeText(minutes) : "";
+    grid.append(label);
+  });
+
+  ROOMS.forEach((room) => {
+    const roomLabel = document.createElement("div");
+    roomLabel.className = "room-label";
+    roomLabel.textContent = room;
+    grid.append(roomLabel);
+
+    const roomBookings = bookings.filter((booking) => booking.room === room);
+
+    slots.forEach((minutes) => {
+      const slot = document.createElement("button");
+      slot.type = "button";
+      slot.className = "slot";
+      slot.dataset.room = room;
+      slot.dataset.time = minutes;
+
+      const booking = roomBookings.find(
+        (item) =>
+          minutes >= parseTime(item.start) &&
+          minutes < parseTime(item.end)
+      );
+
+      const selected = selectedSlots.has(`${room}-${minutes}`);
+
+      if (booking) {
+        const first = minutes === parseTime(booking.start);
+        const last = minutes + STEP === parseTime(booking.end);
+
+        slot.classList.add(
+          first ? "booked-start" : last ? "booked-end" : "booked-middle",
+          "unavailable"
+        );
+
+        slot.title = `${booking.title} — ${booking.organizer}`;
+
+        if (first) {
+          const label = document.createElement("span");
+          label.className = "booking-label";
+          label.textContent = booking.title;
+          slot.append(label);
+        }
+      } else if (selected) {
+        slot.classList.add("selected");
+      } else {
+        slot.title = `Book ${room} at ${timeText(minutes)}`;
+      }
+
+      slot.addEventListener("click", () => {
+        if (!booking) openBooking(room, minutes);
+      });
+
+      grid.append(slot);
     });
   });
 }
-function renderBookings() {
-  const roomFilter = $("roomFilter").value, query = $("searchBookings").value.toLowerCase();
-  const list = readBookings().filter(b => b.date >= isoToday()).filter(b => roomFilter === "all" || b.room === roomFilter).filter(b => `${b.title} ${b.organizer} ${b.room}`.toLowerCase().includes(query)).sort((a,b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`));
-  const wrap = $("bookingsList"); wrap.innerHTML = "";
-  if (!list.length) { wrap.innerHTML = `<div class="empty-state">No upcoming bookings yet.</div>`; return; }
-  list.forEach(b => { const d = new Date(`${b.date}T12:00:00`); const card = document.createElement("article"); card.className = "booking-card"; card.innerHTML = `<div class="booking-date"><strong>${d.getDate()}</strong><small>${d.toLocaleDateString("en-IN",{month:"short"})}</small></div><div class="booking-info"><h3>${escapeHtml(b.title)}</h3><p>${escapeHtml(b.room)} · ${timeText(parseTime(b.start))} – ${timeText(parseTime(b.end))} · ${escapeHtml(b.organizer)}</p></div><button class="cancel-booking" data-id="${b.id}" type="button">Cancel</button>`; wrap.append(card); });
-  wrap.querySelectorAll(".cancel-booking").forEach(btn => btn.addEventListener("click", () => { cancellingId = btn.dataset.id; $("cancelDialogBox").showModal(); }));
+
+async function renderBookings() {
+  const roomFilter = $("roomFilter").value;
+  const query = $("searchBookings").value.toLowerCase();
+
+  const list = (await readBookings())
+    .filter((booking) => booking.date >= isoToday())
+    .filter((booking) => roomFilter === "all" || booking.room === roomFilter)
+    .filter((booking) =>
+      `${booking.title} ${booking.organizer} ${booking.room}`
+        .toLowerCase()
+        .includes(query)
+    );
+
+  const wrap = $("bookingsList");
+  wrap.innerHTML = "";
+
+  if (!list.length) {
+    wrap.innerHTML =
+      '<div class="empty-state">No upcoming bookings yet.</div>';
+    return;
+  }
+
+  list.forEach((booking) => {
+    const date = new Date(`${booking.date}T12:00:00`);
+    const card = document.createElement("article");
+
+    card.className = "booking-card";
+    card.innerHTML = `
+      <div class="booking-date">
+        <strong>${date.getDate()}</strong>
+        <small>${date.toLocaleDateString("en-IN", {
+          month: "short"
+        })}</small>
+      </div>
+      <div class="booking-info">
+        <h3>${escapeHtml(booking.title)}</h3>
+        <p>
+          ${escapeHtml(booking.room)} ·
+          ${timeText(parseTime(booking.start))} –
+          ${timeText(parseTime(booking.end))} ·
+          ${escapeHtml(booking.organizer)}
+        </p>
+      </div>
+    `;
+
+    wrap.append(card);
+  });
 }
-function escapeHtml(v) { const el = document.createElement("div"); el.textContent = v; return el.innerHTML; }
-function setTimeOptions(startMin) { [...$("endTime").options].forEach(o => o.disabled = parseTime(o.value) <= startMin); if (parseTime($("endTime").value) <= startMin) $("endTime").value = timeValue(startMin + STEP); }
-function openBooking(room, start) { selectedSlots.clear(); if (room && start !== undefined) selectedSlots.add(`${room}-${start}`); $("formError").textContent = ""; $("bookingDate").value = $("selectedDate").value; $("room").value = room || ROOMS[0]; $("startTime").value = timeValue(start ?? START); setTimeOptions(start ?? START); $("bookingDialog").showModal(); renderTimeline(); }
-function closeBooking() { selectedSlots.clear(); $("bookingForm").reset(); $("bookingDialog").close(); renderTimeline(); }
+
+function setTimeOptions(startMinutes) {
+  [...$("endTime").options].forEach((option) => {
+    option.disabled = parseTime(option.value) <= startMinutes;
+  });
+
+  if (parseTime($("endTime").value) <= startMinutes) {
+    $("endTime").value = timeValue(startMinutes + STEP);
+  }
+}
+
+function openBooking(room, start) {
+  selectedSlots.clear();
+
+  if (room && start !== undefined) {
+    selectedSlots.add(`${room}-${start}`);
+  }
+
+  $("formError").textContent = "";
+  $("bookingDate").value = $("selectedDate").value;
+  $("room").value = room || ROOMS[0];
+  $("startTime").value = timeValue(start ?? START);
+
+  setTimeOptions(start ?? START);
+  $("bookingDialog").showModal();
+
+  void renderTimeline();
+}
+
+function closeBooking() {
+  selectedSlots.clear();
+  $("bookingForm").reset();
+  $("bookingDialog").close();
+  void renderTimeline();
+}
 
 populateSelects();
-$("selectedDate").min = isoToday(); $("selectedDate").value = isoToday();
+
+$("selectedDate").min = isoToday();
+$("selectedDate").value = isoToday();
 $("bookingDate").min = isoToday();
-renderTimeline(); renderBookings();
-$("selectedDate").addEventListener("change", () => { selectedSlots.clear(); renderTimeline(); });
-$("openBookingBtn").addEventListener("click", () => openBooking());
-$("closeDialog").addEventListener("click", closeBooking); $("cancelDialog").addEventListener("click", closeBooking);
-$("startTime").addEventListener("change", e => setTimeOptions(parseTime(e.target.value)));
-$("roomFilter").addEventListener("change", renderBookings); $("searchBookings").addEventListener("input", renderBookings);
-$("bookingForm").addEventListener("submit", e => { e.preventDefault(); const f = new FormData(e.currentTarget), data = Object.fromEntries(f); const start = parseTime(data.startTime), end = parseTime(data.endTime); const error = $("formError");
-  if (end <= start) { error.textContent = "Choose an end time after the start time."; return; }
-  if (!roomFree(data.room, data.bookingDate, start, end)) { error.textContent = "This room is already booked at that time. Choose another time."; return; }
-  const bookings = readBookings(); bookings.push({ id: crypto.randomUUID(), title: data.meetingTitle.trim() || "Meeting", organizer: data.organizer.trim(), room: data.room, date: data.bookingDate, start: data.startTime, end: data.endTime, createdAt: Date.now() }); saveBookings(bookings); closeBooking(); renderBookings(); toast("Room booked successfully.");
+
+void renderTimeline();
+void renderBookings();
+
+$("selectedDate").addEventListener("change", () => {
+  selectedSlots.clear();
+  void renderTimeline();
 });
-$("keepBooking").addEventListener("click", () => $("cancelDialogBox").close());
-$("confirmCancel").addEventListener("click", () => { if (!cancellingId) return; saveBookings(readBookings().filter(b => b.id !== cancellingId)); cancellingId = null; $("cancelDialogBox").close(); renderTimeline(); renderBookings(); toast("Booking cancelled. The room is free again."); });
+
+$("openBookingBtn").addEventListener("click", () => openBooking());
+
+$("closeDialog").addEventListener("click", closeBooking);
+$("cancelDialog").addEventListener("click", closeBooking);
+
+$("startTime").addEventListener("change", (event) => {
+  setTimeOptions(parseTime(event.target.value));
+});
+
+$("roomFilter").addEventListener("change", () => void renderBookings());
+$("searchBookings").addEventListener("input", () => void renderBookings());
+
+$("bookingForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  const form = new FormData(event.currentTarget);
+  const data = Object.fromEntries(form.entries());
+  const start = parseTime(data.startTime);
+  const end = parseTime(data.endTime);
+  const errorMessage = $("formError");
+
+  if (end <= start) {
+    errorMessage.textContent = "Choose an end time after the start time.";
+    return;
+  }
+
+  const { error } = await supabaseClient.rpc("create_booking", {
+    p_title: data.meetingTitle || "",
+    p_organizer: data.organizer.trim(),
+    p_room: data.room,
+    p_booking_date: data.bookingDate,
+    p_start_time: data.startTime,
+    p_end_time: data.endTime
+  });
+
+  if (error) {
+    errorMessage.textContent =
+      error.message || "Could not save the booking. Please try again.";
+    return;
+  }
+
+  closeBooking();
+  void renderBookings();
+  toast("Room booked successfully.");
+});
