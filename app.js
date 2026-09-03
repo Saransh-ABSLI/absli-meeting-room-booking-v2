@@ -5,7 +5,7 @@ const ROOMS = [
   "Conference Room"
 ];
 
-const SUPABASE_URL = "https://xiupfpnogfrtcxnitdiu.supabase.co/rest/v1/";
+const SUPABASE_URL = "https://xiupfpnogfrtcxnitdiu.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_pPK60oxH3lbdqLcohvJHRA_ILAMG1Gw";
 
 const supabaseClient = window.supabase.createClient(
