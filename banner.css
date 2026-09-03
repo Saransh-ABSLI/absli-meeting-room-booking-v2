@@ -1,0 +1,24 @@
+.booking-banner {
+  align-items: center;
+  background: linear-gradient(112deg, #7c0b0b, #a91518 60%, #ca2025);
+  border-radius: 8px;
+  box-shadow: 0 8px 22px rgba(153, 16, 16, .16);
+  display: flex;
+  justify-content: space-between;
+  margin: 36px 0 28px;
+  min-height: 112px;
+  padding: 24px 30px;
+}
+
+body, body * { font-family: Arial, Helvetica, sans-serif !important; }
+
+.banner-title { align-items: center; color: #fff; display: flex; }
+.banner-title h1 { font-family: "Playfair Display", serif; font-size: 31px; letter-spacing: -.7px; margin: 0; }
+.banner-button { background: #fff; border: 1px solid #fff; border-radius: 4px; color: #991010; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 700; padding: 12px 18px; transition: .2s; }
+.banner-button:hover { background: #ffca00; border-color: #ffca00; }
+.banner-button span { font-size: 18px; margin-right: 5px; vertical-align: -1px; }
+
+@media (max-width: 760px) {
+  .booking-banner { align-items: flex-start; flex-direction: column; gap: 15px; margin: 24px 0; min-height: 100px; padding: 22px; }
+  .banner-title h1 { font-size: 26px; }
+}
